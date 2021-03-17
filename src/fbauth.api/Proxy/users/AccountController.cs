@@ -2,17 +2,18 @@
 using Authmanagement.Context;
 using Authmanagement.Logging;
 using Authmanagement.Proxy.users.Dtos.BindingDtos;
-using Authmanagement.Proxy.users.Services;
+using Facebook;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
-using System.Net.Http.Headers;
+using System.Net.Http;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using Authmanagement.Proxy.tokens;
 
 namespace authmanagement.Proxy.users
 {
@@ -25,16 +26,17 @@ namespace authmanagement.Proxy.users
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ITokenService _tokenService;
         private readonly ApplicationDbContext _userContext;
-        public AccountController(ILoggerManager logger, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, ITokenService tokenService, ApplicationDbContext userContext)
+        private readonly IFirebaseTokenService _firebaseToken;
+        public AccountController(ILoggerManager logger, UserManager<ApplicationUser> userManager, SignInManager<ApplicationUser> signInManager, ITokenService tokenService, ApplicationDbContext userContext, IFirebaseTokenService firebaseToken)
         {
             _logger = logger;
             _userManager = userManager;
             _signInManager = signInManager;
             _tokenService = tokenService;
             _userContext = userContext;
+            _firebaseToken = firebaseToken;
         }
-        [HttpPost]
-        [Route("register")]
+        [HttpPost,Route("register"),AllowAnonymous, Produces("application/json")]
         public async Task<IActionResult> Register([FromBody] UserRegister model)
         {
             if (!ModelState.IsValid)
@@ -44,7 +46,7 @@ namespace authmanagement.Proxy.users
             var jwt = Request.Headers["Authorization"].ToString().Replace("Bearer ", string.Empty);
 
             var user = new ApplicationUser { Email = model.Email, UserName = model.Email };
-            
+
             var result = await _userManager.CreateAsync(user, model.Password);
             if (result.Succeeded)
             {
@@ -54,8 +56,7 @@ namespace authmanagement.Proxy.users
             return Ok(result);
         }
 
-        [HttpPost, Route("Login")]
-        [AllowAnonymous]
+        [HttpPost, Route("Login"), AllowAnonymous, Produces("application/json")]
         public async Task<IActionResult> Login([FromBody] LoginInput model)
         {
 
@@ -69,16 +70,14 @@ namespace authmanagement.Proxy.users
                     //JB. Get the Entity of the that is Login in
                     var user = _userContext.Users.FirstOrDefault(u => u.Email == model.Email);
 
-                    //JB. Add claims on the fly (change to read those from Db)
+                    //JB. Add claims on the fly (must change it to be read from Db)
                     var claims = new List<Claim> {
                     new Claim(ClaimTypes.Email, model.Email),
                     new Claim("Audience","Fuelbetter")
                     };
 
                     var accessToken = _tokenService.GenerateAccessToken(claims);
-                    //var refreshToken = _tokenService.GenerateRefreshToken();
-
-                    //user.RefreshToken = refreshToken;
+                    
                     user.RefreshTokenExpiryTime = DateTime.Now.AddDays(7);
 
                     //JB. Save the new Refresh Token
@@ -89,10 +88,7 @@ namespace authmanagement.Proxy.users
                     //var tokenString = new JwtSecurityTokenHandler().WriteToken(accessToken);
                     return Ok(new { Token = accessToken }); //, RefreshToken = refreshToken});
                 }
-                //if (result.RequiresTwoFactor)
-                //{
-                //    return RedirectToAction(nameof(SendCode), new { ReturnUrl = returnUrl, RememberMe = model.RememberMe });
-                //}
+
                 if (result.IsLockedOut)
                 {
                     _logger.LogWarn("User account locked out.");
@@ -104,7 +100,50 @@ namespace authmanagement.Proxy.users
                     return BadRequest(model);
                 }
             }
-            // If we got this far, something failed, redisplay form
+            // If we get this far, something failed, redisplay form
+            return Unauthorized();
+        }
+        
+        [HttpPost, Route("facebookLogin"), AllowAnonymous, Produces("application/json")]
+        public async Task<IActionResult> FacebookLogin([FromBody] FacebookLoginInput model)
+        {
+            if (!ModelState.IsValid) {
+                return BadRequest("Invalid input");
+            }
+            //JB. Below is just a Test meant to be moved to the corresponding service
+            FacebookClient cl = new FacebookClient();
+            dynamic result = cl.Get("oauth/access_token", new
+            {
+                client_id = "474747580070548",
+                client_secret = "ef64686ec8533c6762d271b21d77f3e2",
+                grant_type = "client_credentials"
+            });
+
+            cl.AccessToken = result.access_token;
+            HttpClient client = new HttpClient();
+            var tokenHandler = new JwtSecurityTokenHandler();
+            string encodedJwt = model.FacebookCode;
+
+            return Ok();
+        }
+
+        [HttpPost, Route("firebaselogin"), AllowAnonymous, Produces("application/json")]
+        public async Task<IActionResult> FirebaseLogin([FromBody] FirebaseLoginInput model)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest("Invalid input");
+            }
+            var claims = new List<Claim>
+            {
+                    new Claim("Audience","Fuelbetter")
+                    };
+            bool validationResult = await _firebaseToken.ValidateIdToken(model.FirebaseToken);
+            if (validationResult)
+            {
+                var result = _tokenService.GenerateAccessToken(claims);
+                return Ok(result);
+            }
             return Unauthorized();
         }
     }

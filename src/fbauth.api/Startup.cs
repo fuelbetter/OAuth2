@@ -1,13 +1,10 @@
-﻿// Copyright (c) Brock Allen & Dominick Baier. All rights reserved.
-// Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
-
-
-using Authmanagement.Extensions;
+﻿using Authmanagement.Extensions;
 using Authmanagement.Infrastructure;
 using Authmanagement.Proxy.clients.extensions;
 using Authmanagement.Proxy.users.extensions;
 using Authmanagement.Proxy.secrets.extensions;
 using Authmanagement.Proxy.resources.extensions;
+using Authmanagement.Proxy.scopes.extensions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -15,6 +12,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Authmanagement.Configuration;
+using Authmanagement.Proxy.tokens.extensions;
 
 namespace fbauth.api
 {
@@ -33,20 +32,28 @@ namespace fbauth.api
             
             //JB. Prepare and onbtain DB conn string from Azure KeyVault.
             var keyVaultUrl = _config.GetConnectionString("ConnectionSource");
-            var connString = KeyvaultProxy.GetUserDbConnection(keyVaultUrl);
+            var connString = KeyvaultProxy.GetUserDbConnection(keyVaultUrl, "UsersDbConnString");
+            var facebookAppId = _config.GetSection("KeyvaultSecretKeys:facebookappId");
+            var facebookAppKey = _config.GetSection("KeyvaultSecretKeys:facebookappKey");
 
             services.AddControllers();
 
             //JB. Below, each domain in the Proxy has its own ServiceConfiguration for DI.
             services.ConfigureClientServices();
             services.ConfigureLoggerService();
-            services.ConfigureTokenService();
             services.ConfigureCustomIdentity();
             services.ConfigureIdentityServer(connString);
             services.ConfigureFuelbetterUsersDb(connString);
             services.ConfigureSecretsServices();
             services.ConfigureResourcesServices();
-
+            services.ConfigureScopeServices();
+            services.ConfigureTokensServices();
+            //Configure Facebook, all secret info coming from Azure Keyvault.
+            services.AddAuthentication().AddFacebook(facebookOptions => {
+                facebookOptions.AppId = KeyvaultProxy.GetFacebookInformation(keyVaultUrl, facebookAppId.Value);
+                facebookOptions.AppSecret = KeyvaultProxy.GetFacebookInformation(keyVaultUrl, facebookAppKey.Value);
+                facebookOptions.AccessDeniedPath = "/AccessDeniedPathInfo";
+            });
         }
         public void Configure(IApplicationBuilder app)
         {
@@ -67,7 +74,6 @@ namespace fbauth.api
             
             app.UseIdentityServer();
 
-            // uncomment, if you want to add MVC
             app.UseAuthorization();
             app.UseEndpoints(endpoints =>
             {

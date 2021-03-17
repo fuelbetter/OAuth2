@@ -12,11 +12,11 @@ namespace Authmanagement.Infrastructure
     /// </summary>
     public static class KeyvaultProxy
     {
-        public static string GetUserDbConnection(string kvurl)
+        public static string GetUserDbConnection(string kvurl, string secretKey)
         {
-            return Task.Run(async () => await SetUpDbContext(kvurl)).Result;
+            return Task.Run(async () => await GetSecretValue(kvurl+secretKey)).Result;
         }
-        private static async Task<string> SetUpDbContext(string source)
+        private static async Task<string> GetSecretValue(string source)
         {
             string Message = "";
             try
@@ -33,5 +33,11 @@ namespace Authmanagement.Infrastructure
             }
             return Message;
         }
+
+        public static string GetFacebookInformation(string kvurl, string secretKey)
+        {
+            return Task.Run(async () => await GetSecretValue(kvurl + secretKey)).Result;
+        }
+
     }
 }

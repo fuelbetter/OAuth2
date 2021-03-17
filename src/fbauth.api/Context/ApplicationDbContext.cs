@@ -16,9 +16,10 @@ namespace Authmanagement.Context
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
-
+            
             builder.Entity<ApplicationUser>(entity=> { entity.ToTable(name: "FuelbetterUser"); });
             builder.Entity<IdentityRole>(entity => {entity.ToTable(name: "FuelbetterUserRoles");});
+            
         }
 
         
@@ -27,6 +28,7 @@ namespace Authmanagement.Context
         public DbSet<ClientSecret> ClientSecrets { get; set; }
         public DbSet<ClientGrantType> ClientGrantTypes { get; set; }
         public DbSet<ClientClaim> ClientClaims { get; set; }
+        
       
 
         public DbSet<ApiResource> ApiResources { get; set; }
